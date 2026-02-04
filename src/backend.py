@@ -87,7 +87,7 @@ def extract_text_with_ocr(uploaded_file):
     with open(temp_pdf_path, "wb") as f:
         f.write(uploaded_file.getvalue())
 
-    poppler_bin = r"C:\Users\USER\Downloads\Release-25.12.0-0\poppler-25.12.0\Library\bin"
+    poppler_bin = os.getenv("POPPLER_PATH", None)
 
     try:
         images = convert_from_path(
@@ -286,7 +286,93 @@ Answer only with:
 VALID_CV or NOT_CV
 """
     return call_llm(prompt, temperature=0).strip() == "VALID_CV"
+#---------------------------------------
+#add new
+#----------------------------------------
+def extract_education_text(cv_text):
+    """
+    Extract education-related lines from a CV.
+    Supports Arabic and English.
+    """
+    education_keywords = [
+        # English
+        "education", "degree", "bachelor", "master", "phd",
+        "university", "college",
 
+        # Arabic
+        "التعليم", "بكالوريوس", "ماجستير", "دكتوراه",
+        "جامعة", "كلية"
+    ]
+
+    lines = cv_text.splitlines()
+    education_lines = [
+        line for line in lines
+        if any(k.lower() in line.lower() for k in education_keywords)
+    ]
+
+    return "\n".join(education_lines)
+
+def extract_job_role_representation(job_text):
+    """
+    Build a semantic representation of the job role.
+    - Uses explicit job titles if present
+    - Otherwise infers role identity from responsibilities and skills
+    - Supports Arabic and English
+    """
+
+    lines = [l.strip() for l in job_text.splitlines() if l.strip()]
+    text_lower = job_text.lower()
+
+    # ----------------------------------------
+    # Explicit job title indicators
+    # ----------------------------------------
+    explicit_title_keywords = [
+        # English
+        "position", "role", "job title", "we are looking for",
+        "seeking", "hiring",
+
+        # Arabic
+        "المسمى الوظيفي", "نبحث عن", "مطلوب", "الوظيفة"
+    ]
+
+    explicit_titles = []
+
+    for line in lines[:5]:  # search only early lines
+        if any(k in line.lower() for k in explicit_title_keywords):
+            explicit_titles.append(line)
+
+    # ----------------------------------------
+    # If explicit title exists → trust it
+    # ----------------------------------------
+    if explicit_titles:
+        return " ".join(explicit_titles)
+
+    # ----------------------------------------
+    # Otherwise infer role from job content
+    # ----------------------------------------
+    inferred_role_lines = []
+
+    role_signals = [
+        # English
+        "responsible for", "will work on", "manage", "develop",
+        "design", "analyze", "implement", "support",
+
+        # Arabic
+        "مسؤول عن", "العمل على", "تطوير", "تصميم",
+        "تحليل", "تنفيذ", "إدارة", "تقديم الدعم"
+    ]
+
+    for line in lines:
+        if any(k in line.lower() for k in role_signals):
+            inferred_role_lines.append(line)
+
+    # Fallback: use whole description (trimmed)
+    if not inferred_role_lines:
+        return job_text[:500]
+
+    return "\n".join(inferred_role_lines)
+
+    
 # ===============================
 # JOB KEY POINT EXTRACTION
 # ===============================
@@ -379,24 +465,66 @@ def cosine_similarity(v1, v2):
 
 # Compute a weighted semantic match score between a CV and a job description
 def compute_weighted_match(cv_text, job_text):
+    """
+    Compute a weighted semantic match score between a CV and a job description.
+
+    The final score combines:
+    - General semantic alignment between the CV and the full job description (50%)
+    - Focused alignment with job responsibilities and required skills (40%)
+    - Educational alignment with the inferred job role (10%)
+
+    All comparisons are semantic (embedding-based), not keyword or title matching.
+    """
+
+    # ---------------------------------------
+    # 1. Extract focused job content
+    # ---------------------------------------
     job_points = extract_job_key_points(job_text)
     focus_text = "\n".join(
         job_points["responsibilities"] + job_points["skills"]
     )
 
+    # ---------------------------------------
+    # 2. Base semantic similarity (CV ↔ Job)
+    # ---------------------------------------
     cv_vec = get_safe_embedding(cv_text)
     job_vec = get_safe_embedding(job_text)
-
     base_score = cosine_similarity(cv_vec, job_vec)
 
+    # ---------------------------------------
+    # 3. Focused similarity (CV ↔ Skills & Responsibilities)
+    # ---------------------------------------
     if focus_text.strip():
         focus_vec = get_safe_embedding(focus_text)
         focus_score = cosine_similarity(cv_vec, focus_vec)
-        final_score = (0.6 * base_score) + (0.4 * focus_score)
     else:
-        final_score = base_score
+        focus_score = base_score  # graceful fallback
+
+    # ---------------------------------------
+    # 4. Education ↔ Job Role semantic alignment
+    # ---------------------------------------
+    education_text = extract_education_text(cv_text)
+    job_role_text = extract_job_role_representation(job_text)
+
+    if education_text.strip() and job_role_text.strip():
+        edu_vec = get_safe_embedding(education_text)
+        role_vec = get_safe_embedding(job_role_text)
+        education_score = cosine_similarity(edu_vec, role_vec)
+    else:
+        # fallback if education or role cannot be inferred
+        education_score = base_score
+
+    # ---------------------------------------
+    # 5. Final weighted score
+    # ---------------------------------------
+    final_score = (
+        0.50 * base_score +
+        0.40 * focus_score +
+        0.10 * education_score
+    )
 
     return round(final_score * 100, 2)
+
 
 # ===============================
 # PROMPTS
@@ -490,11 +618,12 @@ to support ethical and transparent HR screening.
 Do NOT mention or infer any personal names. Refer to the person only as "the candidate".
 
 Language Policy:
-- Detect the language of the job description.
-- If the resume language differs from the job description, ignore the resume language and follow the job description language strictly.
-- Generate the entire output in the same language as the job description.
-- If the job description is written in Arabic, respond in clear, formal Modern Standard Arabic suitable for professional HR documentation.
-- Do not mix languages in the output.
+- The output language MUST be the same as the job description language.
+- EVEN IF the resume is written in a different language, you MUST ignore the resume language completely.
+- Do NOT translate resume content verbatim.
+- Do NOT mix languages under any circumstances.
+- Any violation of this rule is considered an incorrect output.
+
 
 Resume (anonymized):
 {cv_text}
@@ -589,3 +718,4 @@ def is_low_quality_text(text):
         return True
 
     return False
+

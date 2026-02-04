@@ -133,6 +133,25 @@ Poppler is required by the `pdf2image` library to process PDF files,
 especially image-based or scanned resumes. Without Poppler, OCR-based
 text extraction from PDFs will fail.
 
+#### Poppler Installation (Windows)
+
+This project uses Poppler for converting PDF files into images prior to OCR processing.
+
+1. Download the latest Poppler release from:
+   https://github.com/oschwartz10612/poppler-windows/releases
+
+2. Extract the archive (e.g., to `C:\poppler`)
+
+3. Set the following environment variable:
+
+   POPPLER_PATH = C:\poppler\Library\bin
+
+4. (Optional) Add the same path to your system PATH.
+
+5. Verify installation by running:
+   pdftoppm -h
+
+
 ### Tesseract Language Support
 
 To enable OCR for Arabic resumes, the Arabic language data file must be installed.
@@ -146,18 +165,6 @@ If Arabic is missing, download `ara.traineddata` from:
 https://github.com/tesseract-ocr/tessdata
 
 
-#### Poppler Installation (Windows)
-
-1. Download the latest Poppler release from:
-   https://github.com/oschwartz10612/poppler-windows/releases
-
-2. Extract the archive (e.g., to `C:\poppler`)
-
-3. Add the following path to your system PATH:
-   `C:\poppler\Library\bin`
-
-4. Verify installation by running:
-   `pdftoppm -h`
 
 ### Python Dependencies
 
@@ -181,7 +188,7 @@ Restart the terminal after setting the variable.
 
 ### Launch the Web Interface
 
-python -m streamlit run app.py
+python -m streamlit run src/app.py
 
 The application opens automatically in the browser.
 

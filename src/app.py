@@ -4,7 +4,8 @@ import pickle
 import uuid
 import hashlib
 
-from backend import (
+from pathlib import Path
+from src.backend import (
     read_pdf,
     deidentify_text,
     compute_weighted_match,
@@ -22,8 +23,12 @@ from backend import (
 # ===============================
 # Application configuration and static resources
 # Defines file paths and UI assets used across the app
-POOL_FILE = "company_cv_pool.pkl"
-LOGO_FILE = "logo.png"
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+DATA_DIR = BASE_DIR / "data"
+POOL_FILE = DATA_DIR / "company_cv_pool.pkl"
+
+LOGO_FILE = BASE_DIR / "logo.png"
 
 # Configure Streamlit page layout and title
 st.set_page_config(
@@ -48,13 +53,30 @@ if "company_results" not in st.session_state:
 if "job_text_company" not in st.session_state:
     st.session_state.job_text_company = ""
 
+# Individual page state
+if "individual_done" not in st.session_state:
+    st.session_state.individual_done = False
+
+if "individual_score" not in st.session_state:
+    st.session_state.individual_score = None
+
+if "individual_clean_cv" not in st.session_state:
+    st.session_state.individual_clean_cv = ""
+
+if "individual_job_text" not in st.session_state:
+    st.session_state.individual_job_text = ""
+
+if "individual_explanation" not in st.session_state:
+    st.session_state.individual_explanation = ""
+
+
 # ===============================
 # Helpers
 # ===============================
 # Load stored company CV pool from disk
 # Returns an empty list if no pool exists
 def load_cv_pool():
-    if not os.path.exists(POOL_FILE):
+    if not POOL_FILE.exists():
         return []
     try:
         with open(POOL_FILE, "rb") as f:
@@ -64,6 +86,7 @@ def load_cv_pool():
 
 # Save the updated company CV pool to disk
 def save_cv_pool(pool):
+    DATA_DIR.mkdir(exist_ok=True)
     with open(POOL_FILE, "wb") as f:
         pickle.dump(pool, f)
 
@@ -140,6 +163,8 @@ def individual_page():
     else:
         cv_file = st.file_uploader("Upload CV (PDF)", type=["pdf"])
         cv_text = read_pdf(cv_file) if cv_file else ""
+        
+
 
     # Select how the job description is provided
     job_type = st.radio("Job Description Input Method", ["Text", "PDF"])
@@ -182,14 +207,29 @@ def individual_page():
         score = compute_weighted_match(clean_cv, job_text
         )
 
-        st.subheader(f"Match Score: {score}%")
-        st.write(explain_match(clean_cv, job_text, score))
+        st.session_state.individual_clean_cv = clean_cv
+        st.session_state.individual_job_text = job_text
+        st.session_state.individual_score = score
+        st.session_state.individual_explanation = explain_match(
+            clean_cv, job_text, score
+        )
+        st.session_state.individual_done = True
+
+    if st.session_state.individual_done:
+        st.subheader(f"Match Score: {st.session_state.individual_score}%")
+        st.write(st.session_state.individual_explanation)
 
         if st.checkbox("Show detailed alignment analysis"):
-            st.write(analyze_alignment(clean_cv, job_text))
+            st.write(
+                analyze_alignment(
+                    st.session_state.individual_clean_cv,
+                    st.session_state.individual_job_text
+                )
+            )
 
     if st.button("⬅ Back to Home"):
         st.session_state.page = "home"
+
 
 # ===============================
 # COMPANY PAGE
