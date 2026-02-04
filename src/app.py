@@ -99,7 +99,7 @@ def header():
     with col2:
         st.markdown("## **FairMatch AI**")
         st.markdown(
-            "<span style='color:gray'>Ethical, Explainable & Multilingual Resume–Job Matching</span>",
+            "<span style='color:gray'>Ethical, Explainable & Transparent Resume–Job Matching</span>",
             unsafe_allow_html=True
         )
     st.divider()
